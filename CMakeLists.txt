@@ -17,7 +17,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 set(TRITON_IXRT_BACKEND_LIBNAME triton_ixrt)
-string(APPEND CMAKE_CXX_FLAGS " --cuda-gpu-arch=ivcore11")
+
 include(FetchContent)
 
 
