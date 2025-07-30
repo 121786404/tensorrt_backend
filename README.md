@@ -1,94 +1,243 @@
-<!--
-# Copyright 2021, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-#
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions
-# are met:
-#  * Redistributions of source code must retain the above copyright
-#    notice, this list of conditions and the following disclaimer.
-#  * Redistributions in binary form must reproduce the above copyright
-#    notice, this list of conditions and the following disclaimer in the
-#    documentation and/or other materials provided with the distribution.
-#  * Neither the name of NVIDIA CORPORATION nor the names of its
-#    contributors may be used to endorse or promote products derived
-#    from this software without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
-# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
-# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
--->
+# Triton Inference Server - IXRT backend
 
-[![License](https://img.shields.io/badge/License-BSD3-lightgrey.svg)](https://opensource.org/licenses/BSD-3-Clause)
+使用TensorRT 8.4.1.5的接口进行适配  
+可以处理动态形状的推理请求
 
-# TensorRT Backend
+## 基础概念
+关于triton的基础概念，请参考NVIDIA提供的[triton tutorials](https://github.com/triton-inference-server/tutorials)
 
-The Triton backend for [TensorRT](https://github.com/NVIDIA/TensorRT). 
-You can learn more about Triton backends in the [backend
-repo](https://github.com/triton-inference-server/backend). Ask
-questions or report problems on the [issues
-page](https://github.com/triton-inference-server/server/issues).
-This backend is designed to run a serialized [TensorRT engine](https://docs.nvidia.com/deeplearning/tensorrt/developer-guide/index.html#build_engine_c)
-models using the TensorRT C++ API.
-
-Where can I ask general questions about Triton and Triton backends?
-Be sure to read all the information below as well as the [general
-Triton documentation](https://github.com/triton-inference-server/server#triton-inference-server)
-available in the main [server](https://github.com/triton-inference-server/server)
-repo. If you don't find your answer there you can ask questions on the
-main Triton [issues page](https://github.com/triton-inference-server/server/issues).
-
-## Command-line Options
-
-The command-line options configure properties of the TensorRT
-backend that are then applied to all models that use the backend.
-
-Below is an example of how to specify the backend config and the full list of
-options.
-
-##### --backend-config=tensorrt,coalesce-request-input=\<boolean\>,plugins="/path/plugin1.so;/path2/plugin2.so"
-
-* `coalesce-request-input` flag instructs TensorRT to consider the requests' inputs with the same name as
-one contiguous buffer if their memory addresses align with each other.
-This option should only be enabled if all requests' input tensors are allocated
-from the same memory region. Default value is false.
-
-* `plugins` flag provides a way to load any custom TensorRT plugins that your models rely on. If you have
-multiple plugins to load, use a semicolon as the delimiter.
-
-* `execution-policy` flag instructs TensorRT backend to execute the model with
-different Triton execution policies (see `TRITONBACKEND_ExecutionPolicy`
-for detail). Currently the following values are accepted:
-  * `DEVICE_BLOCKING`: corresponds to `TRITONBACKEND_EXECUTION_DEVICE_BLOCKING`,
-  this option can be set to avoid possible CUDA contention from launching
-  many kernels from multiple threads.
-  * `BLOCKING`: corresponds to `TRITONBACKEND_EXECUTION_BLOCKING`, this option
-  can be set to overlap the host thread workload between model instances.
-
-
-
-## Build the TensorRT Backend
-
-Appropriate version of TensorRT must be installed on the system. Check the support matrix to find the correct version of TensorRT to be installed.
-
+## 前置要求
+首先确保，您的工作环境中已经正确安装了tritonserver  
+例如，可以在/opt/tritionserver/bin/目录下，找到可执行文件tritonserver  
+triton inference server 依赖库的组织如下  
 ```
-$ mkdir build
-$ cd build
-$ cmake -DCMAKE_INSTALL_PREFIX:PATH=`pwd`/install ..
-$ make install
+/opt/tritonserver/bin
+                  /lib
+                  /backend
+```
+如需安装triton inference server，请参考[triton 相关文档](http://10.150.9.95/docs/4-sdk-docs-mr-x86-zh/_source/tis.html#)  
+获取相关docker或者从源码编译
+## 配置环境
+### 安装IXRT 运行时（必选）
+可以从如下网址获取run安装包  
+http://10.150.9.95/swapp/release/ixrt/latest/  
+这个地址下放置的安装文件是每日更新的，请注意版本号下文中的版本号更新，截止本文更新时，最新的IXRT版本号是0.7.0  
+我们以ixrt-0.7.0+corex.latest.version-linux_x86_64.run版本为例，可以进入到任意路径，例如/tmp  
+下载run文件，如下  
+```
+wget http://10.150.9.95/swapp/release/ixrt/latest/ixrt-0.7.0+corex.latest.version-linux_x86_64.run
+```
+添加使用权限
+```
+chmod +x ixrt-0.7.0+corex.latest.version-linux_x86_64.run 
+```
+运行安装过程
+```
+./ixrt-0.7.0+corex.latest.version-linux_x86_64.run 
+```
+安装结束后，输出信息提示，头文件和库文件的安装位置，常见如下 
+```
+Welcome to use IxRT! Now installing IxRT library to /usr/local/corex...
+Thank you for using IxRT!
+- library path: /usr/local/corex/lib
+- header path: /usr/local/corex/include
+- samples path: /usr/local/corex/samples/ixrt
 ```
 
-The following required Triton repositories will be pulled and used in
-the build. By default the "main" branch/tag will be used for each repo
-but the listed CMake argument can be used to override.
+### 安装IXRT Python包（可选）
+为了方便脚本化测试，和Python接口的使用，请根据您所使用机器的Python版本选择安装包  
+例如，Python版本为3.7，可以下载安装包
+```
+wget http://10.150.9.95/swapp/release/ixrt/latest/ixrt-0.7.0+corex.latest.version-cp37-cp37m-linux_x86_64.whl
+```
+安装Python包
+```
+pip install ixrt-0.7.0+corex.latest.version-cp37-cp37m-linux_x86_64.whl
+```
+关于IXRT的使用细节，请参考[IXRT使用文档](http://10.150.9.95/swapp/docs/ixrt/dev/index.html)
+### 编译IXRT triton backend
+#### 下载源码库
+请进入您的工作目录，例如，在/home/xxx/
+```
+cd /opt
+```
+获取工程源码
+```
+git clone ssh://git@bitbucket.iluvatar.ai:7999/swapp/tensorrt_backend.git
+```
+现在，请进入源码目录
+```
+cd /home/xxx/tis_ixrt_backend
+```
 
-* triton-inference-server/backend: -DTRITON_BACKEND_REPO_TAG=[tag]
-* triton-inference-server/core: -DTRITON_CORE_REPO_TAG=[tag]
-* triton-inference-server/common: -DTRITON_COMMON_REPO_TAG=[tag]
+#### 配置编译选项
+打开工程目录中的build.sh  
+修改-DIXRT_HOME=/path_to_ixrt  
+指向IXRT的头文件，以及库安装路径  
+以上面的IXRT安装过程为例，可以修改为
+```
+-DIXRT_HOME=/usr/local/corex/
+```
+
+#### 执行编译过程
+添加执行权限
+```
+chmod +x build.sh
+```
+
+执行编译脚本
+```
+./build.sh
+```
+编译过程会自动在当前工程目录下，创建build文件夹，所有的编译产物放置在这里
+
+### 配置模型仓库
+模型仓库是triton服务启动时需要加载的模型文件  
+组织形式是
+```
+<model_repository>/<model_name>/<version_directory>/ixrt_engine_file
+                               /config.pbtxt
+```
+如果有多个类型的模型，表达形式为
+```
+<model_repository>/<model_name_1>/<version_directory>/ixrt_engine_file
+                                 /config.pbtxt
+                  /<model_name_2>/<version_directory>/ixrt_engine_file
+                                 /config.pbtxt
+```
+IXRT后端可接受的模型文件是根据模型生成的engine文件  
+#### 使用已有模型仓库
+为了方便您能够快速体验IXRT的后端，已经准备好ResNet-18的FP16精度，分类网络测试用例，允许输入的形状尺寸是[1,3,112,112]~[16,3,448,448]
+下载文件包
+```
+wget http://10.150.9.95/swapp/projects/ixrt/data/tis_ixrt_backend_data.zip
+```
+解压缩文件包
+```
+unzip tis_ixrt_backend_data.zip
+```
+其中包含的文件夹有
+* ixrt_model_repository：测试模型和配置文件
+* resnet18：测试用图片文件
+例如，将将ixrt_model_repository文件夹移动到/opt目录
+按照如上路径配置要求，您将会看到这样的文件结构
+```
+/opt/ixrt_model_repository/cls/1/resnet18_dynamic.engine
+                              /config.pbtxt
+```
+config文件的内容，请参考[说明文档](https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/user_guide/model_configuration.html)
+#### 自行构建模型仓库
+关于IXRT engine的详细信息请参考[文档说明](http://10.150.9.95/swapp/docs/ixrt/dev/python_api.html#engine)
+在scripts文件夹下，提供了一个onnx文件转为FP16精度engine的脚本示例-onnx2engine.py  
+由于需要使用到ixrt的Python接口，请安装IXRT的Python包  
+生成engine的功能，很快会将这个功能集成在[ixrtexec工具](http://10.150.9.95/swapp/docs/ixrt/dev/ixrtexec.html)
+下面展示从ResNet-18的ONNX模型，构建动态形状engine的流程  
+获取ResNet-18的动态形状文件，下载数据
+```
+wget http://10.150.9.95/swapp/projects/ixrt/data/resnet18.zip
+```
+解压缩
+```
+unzip resnet18.zip
+```
+例如，文件解压到/home/data/resnet18  
+
+在resnet18文件夹下，resnet18-all-dynamic.onnx支持batch size，image height， image width的动态变化  
+
+修改onnx2engine.py文件的4~6行，指定ONNX所在位置（/home/data/resnet18)，输入ONNX文件名(resnet18-all-dynamic.onnx)和输出engine文件名(esnet18_dynamic.engine)  
+```
+dir_path="/home/data/resnet18/"
+onnx_name = 'resnet18-all-dynamic.onnx'
+engine_name = "resnet18_dynamic.engine"
+```
+设置动态范围，第17行
+```
+profile.set_shape("input", Dims([1,3,112,112]), Dims([2,3,224,224]), Dims([16,3,448,448]))
+```
+如上语句，针对动态输入接口"input"，设置最小尺寸[1,3,112,112]，最常用尺寸[2,3,224,224]，最大尺寸[16,3,448,448]  
+执行Python文件
+```
+python onnx2engine.py
+```
+engine文件会出现在/home/data/resnet18/resnet18_dynamic.engine
+### 安装后端库
+成功编译之后，在当前工程目录的build文件夹下，可以找到名字为libtriton_ixrt.so的文件  
+可以放置于如下三个路径，会被triton 服务端程序找到  
+* <model_repository>/<model_name>/<version_directory>/libtriton_ixrt.so
+
+* <model_repository>/<model_name>/libtriton_ixrt.so
+
+* <global_backend_directory>/backend_type/libtriton_ixrt.so
+
+如果是全局路径，一般放置在triton的安装目录下，如下所示
+```
+/opt/
+  tritonserver/
+    backends/
+      ixrt/
+        libtriton_ixrt.so
+        ... # other files needed by mybackend
+```
+
+### 安装Python Client
+使用Python客户端，可以方便的发送推理请求，并进行测试  
+使用如下安装命令
+```
+pip install tritonclient[http] opencv-python-headless
+```
+
+## 运行测试
+测试代码位于python_client_example  
+tis_ixrt_backend_data.zip中的resnet18文件夹下有三张图片  
+可以将resnet18文件夹放置到期望位置
+修改python_client_example/client.py的127行，指向resnet18文件夹位置  
+测试用例展示的内容有：
+* 输入1x3x224x224图片，展示推理流程
+* 输入1x3x196x196图片，展示image height， image width动态调整后的推理
+* 输入2x3x224x224图片，展示batch size动态调整后的推理
+使用如下命令启动triton 服务
+```
+tritonserver --model-repository=/your_path/ixrt_model_repository/
+```
+如果使用前文所示例的模型仓库位置，命令如下
+```
+tritonserver --model-repository=/opt/ixrt_model_repository/
+```
+然后运行客户端，查看demo演示
+```
+python python_client_example/client.py
+```
+
+期望的输出结果为
+```
+------------------------------Python inference result------------------------------
+Top 1:   10.1484375  n02123159 tiger cat
+Top 2:   9.9296875  n02123045 tabby, tabby cat
+Top 3:   9.6640625  n02124075 Egyptian cat
+Top 4:   8.6171875  n03887697 paper towel
+Top 5:   8.2578125  n03958227 plastic bag
+------------------------------Python inference result------------------------------
+Top 1:   11.171875  n02123159 tiger cat
+Top 2:   10.765625  n02123045 tabby, tabby cat
+Top 3:   10.3125  n02124075 Egyptian cat
+Top 4:   10.2578125  n02127052 lynx, catamount
+Top 5:   8.1171875  n02123394 Persian cat
+
+
+batch result
+result  0
+------------------------------Python inference result------------------------------
+Top 1:   10.1484375  n02123159 tiger cat
+Top 2:   9.9296875  n02123045 tabby, tabby cat
+Top 3:   9.6640625  n02124075 Egyptian cat
+Top 4:   8.6171875  n03887697 paper towel
+Top 5:   8.2578125  n03958227 plastic bag
+result  1
+------------------------------Python inference result------------------------------
+Top 1:   16.765625  n01558993 robin, American robin, Turdus migratorius
+Top 2:   12.3046875  n01824575 coucal
+Top 3:   11.3984375  n02486261 patas, hussar monkey, Erythrocebus patas
+Top 4:   9.125  n01560419 bulbul
+Top 5:   9.125  n01807496 partridge
+```
+

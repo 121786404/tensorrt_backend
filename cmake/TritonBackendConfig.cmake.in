@@ -1,4 +1,4 @@
-# Copyright 2021, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -23,8 +23,17 @@
 # OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-{
-  global:
-    TRITONBACKEND_*;
-  local: *;
-};
+
+include(CMakeFindDependencyMacro)
+
+get_filename_component(
+  TRITONBACKEND_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH
+)
+
+list(APPEND CMAKE_MODULE_PATH ${TRITONBACKEND_CMAKE_DIR})
+
+if(NOT TARGET TritonBackend::triton-backend-utils)
+  include("${TRITONBACKEND_CMAKE_DIR}/TritonBackendTargets.cmake")
+endif()
+
+set(TRITONBACKEND_LIBRARIES TritonBackend::triton-backend-utils)

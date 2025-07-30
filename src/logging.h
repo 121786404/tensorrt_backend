@@ -1,39 +1,74 @@
-// Copyright 2021, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions
-// are met:
-//  * Redistributions of source code must retain the above copyright
-//    notice, this list of conditions and the following disclaimer.
-//  * Redistributions in binary form must reproduce the above copyright
-//    notice, this list of conditions and the following disclaimer in the
-//    documentation and/or other materials provided with the distribution.
-//  * Neither the name of NVIDIA CORPORATION nor the names of its
-//    contributors may be used to endorse or promote products derived
-//    from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-// PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-// CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-// PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
-// OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Created on 2023/4/25.
 #pragma once
+#include <cassert>
+#include <iostream>
+#include "logging.h"
+#include "memory_utils.h"
+#include "NvInfer.h"
+using Severity = nvinfer1::ILogger::Severity;
+class Logger : public nvinfer1::ILogger {
+   public:
+    explicit Logger(Severity severity = Severity::kWARNING) : mReportableSeverity(severity) {}
 
-#include <NvInfer.h>
+    //!
+    //! \brief Forward-compatible method for retrieving the nvinfer::ILogger associated with this Logger
+    //! \return The nvinfer1::ILogger associated with this Logger
+    //!
+    //! TODO Once all samples are updated to use this method to register the logger with TensorRT,
+    //! we can eliminate the inheritance of Logger from ILogger
+    //!
+    nvinfer1::ILogger& getIxRTLogger() noexcept { return *this; }
 
-namespace triton { namespace backend { namespace tensorrt {
+    //!
+    //! \brief Implementation of the nvinfer1::ILogger::log() virtual method
+    //!
+    //! Note samples should not be calling this function directly; it will eventually go away once we eliminate the
+    //! inheritance from nvinfer1::ILogger
+    //!
+    void log(Severity severity, const char* msg) noexcept override {
+        if (severity <= mReportableSeverity) {
+            std::cout << severityPrefix(mReportableSeverity) << "[IXRT] " << msg << std::endl;
+        }
+    }
 
-// Logger for TensorRT API
-class TensorRTLogger : public nvinfer1::ILogger {
-  void log(Severity severity, const char* msg) noexcept override;
-};
+    //!
+    //! \brief Method for controlling the verbosity of logging output
+    //!
+    //! \param severity The logger will only emit messages that have severity of this level or higher.
+    //!
+    void setReportableSeverity(Severity severity) noexcept { mReportableSeverity = severity; }
 
-extern TensorRTLogger tensorrt_logger;
+    //!
+    //! \brief Opaque handle that holds logging information for a particular test
+    //!
+    //! This object is an opaque handle to information used by the Logger to print test results.
+    //! The sample must call Logger::defineTest() in order to obtain a TestAtom that can be used
+    //! with Logger::reportTest{Start,End}().
+    //!
 
-}}}  // namespace triton::backend::tensorrt
+    Severity getReportableSeverity() const { return mReportableSeverity; }
+
+   private:
+    //!
+    //! \brief returns an appropriate string for prefixing a log message with the given severity
+    //!
+    static const char* severityPrefix(Severity severity) {
+        switch (severity) {
+            case Severity::kINTERNAL_ERROR:
+                return "[F] ";
+            case Severity::kERROR:
+                return "[E] ";
+            case Severity::kWARNING:
+                return "[W] ";
+            case Severity::kINFO:
+                return "[I] ";
+            case Severity::kVERBOSE:
+                return "[V] ";
+            default:
+                assert(0);
+                return "";
+        }
+    }
+
+    Severity mReportableSeverity;
+};  // class Logger
