@@ -517,10 +517,12 @@ TensorFormatToString(const nvinfer1::TensorFormat& io_format)
       return "HWC16";
     case nvinfer1::TensorFormat::kCDHW32:
       return "CDHW32";
+#ifndef __ILUVATAR__
     case nvinfer1::TensorFormat::kDLA_LINEAR:
       return "DLA_LINEAR";
     case nvinfer1::TensorFormat::kDLA_HWC4:
       return "DLA_HWC4";
+#endif
     default:
       return "UNKNOWN";
   }

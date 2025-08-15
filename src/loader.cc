@@ -52,7 +52,7 @@ LoadPlan(
            tensorrt_logger->LastErrorMsg())
               .c_str());
     }
-
+#ifndef __ILUVATAR__
     if (ModelState::isVersionCompatible() &&
         !runtime->get()->getEngineHostCodeAllowed()) {
       runtime->get()->setEngineHostCodeAllowed(true);
@@ -60,8 +60,10 @@ LoadPlan(
           TRITONSERVER_LOG_VERBOSE,
           (std::string("Version compatibility enabled for runtime")).c_str());
     }
+#endif
   }
 
+#ifndef __ILUVATAR__
   // Report error if 'dla_core_id' >= number of DLA cores
   if (dla_core_id != -1) {
     auto dla_core_count = (*runtime)->getNbDLACores();
@@ -76,6 +78,7 @@ LoadPlan(
               .c_str());
     }
   }
+#endif
 
   std::string model_data_str;
   RETURN_IF_ERROR(ReadTextFile(plan_path, &model_data_str));
