@@ -1988,15 +1988,6 @@ ModelInstanceState::InitIOBindingBuffers()
         InitializeSequenceStateInputBindings(model_state_->ModelConfig()));
   }
 
-  for (const auto& trt_context : trt_contexts_) {
-    if (trt_context.second.context_->inferShapes(0, nullptr) != 0) {
-      return TRITONSERVER_ErrorNew(
-          TRITONSERVER_ERROR_INTERNAL,
-          "failed to specify the dimensions of all input tensors or values of "
-          "all input shape tensors");
-    }
-  }
-
   // Batch output must be processed before other outputs and sequence state
   // should be processed at the end.
   for (int s = 0; s < num_copy_streams_; s++) {
@@ -2022,6 +2013,15 @@ ModelInstanceState::InitIOBindingBuffers()
              " '" + tensor_name + "' for " + Name())
                 .c_str());
       }
+    }
+  }
+
+  for (const auto& trt_context : trt_contexts_) {
+    if (trt_context.second.context_->inferShapes(0, nullptr) != 0) {
+      return TRITONSERVER_ErrorNew(
+          TRITONSERVER_ERROR_INTERNAL,
+          "failed to specify the dimensions of all input tensors or values of "
+          "all input shape tensors");
     }
   }
 
